@@ -21,7 +21,7 @@ async def downstatus(client, statusfile, message, chat):
             break
 
         await asyncio.sleep(3)
-      
+
     while os.path.exists(statusfile):
         with open(statusfile, "r") as downread:
             txt = downread.read()
@@ -119,77 +119,7 @@ async def save(client: Client, message: Message):
             except:
                 batch_temp.IS_BATCH[message.from_user.id] = True
                 return await message.reply("**Your Login Session Expired. So /logout First Then Login Again By - /login**")
-            
-            # private
-            if "https://t.me/c/" in message.text:
-                try:
-                    # Fix for "int too big to convert" error
-                    chat_part = datas[4]
-                    # Convert to string first, then handle as string
-                    chatid = int("-100" + chat_part) if len(chat_part) <= 15 else int(chat_part)
-                    try:
-                        await handle_private(client, acc, message, chatid, msgid)
-                    except Exception as e:
-                        if ERROR_MESSAGE == True:
-                            await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id)
-                except ValueError as e:
-                    if ERROR_MESSAGE == True:
-                        await client.send_message(message.chat.id, f"Error processing chat ID: {e}. Please use the numeric chat ID directly.", reply_to_message_id=message.id)
-            # bot
-            elif "https://t.me/b/" in message.text:
-                username = datas[4]
-                try:
-                    await handle_private(client, acc, message, username, msgid)
-                except Exception as e:
-                    if ERROR_MESSAGE == True:
-                        await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id)
-            
-            # public
-            else:
-                username = datas[3]
 
-                try:
-                    msg = await client.get_messages(username, msgid)
-                except UsernameNotOccupied: 
-                    await client.send_message(message.chat.id, "The username is not occupied by anyone", reply_to_message_id=message.id)
-                    return
-                try:
-                    await client.copy_message(message.chat.id, msg.chat.id, msg.id, reply_to_message_id=message.id)
-                except:
-                    try:    
-                        await handle_private(client, acc, message, username, msgid)               
-                    except Exception as e:
-                        if ERROR_MESSAGE == True:
-                            await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id)
-
-            # wait time
-            await asyncio.sleep(3)
-        batch_temp.IS_BATCH[message.from_user.id] = True
-    if "https://t.me/" in message.text:
-        if batch_temp.IS_BATCH.get(message.from_user.id) == False:
-            return await message.reply_text("**One Task Is Already Processing. Wait For Complete It. If You Want To Cancel This Task Then Use - /cancel**")
-        datas = message.text.split("/")
-        temp = datas[-1].replace("?single","").split("-")
-        fromID = int(temp[0].strip())
-        try:
-            toID = int(temp[1].strip())
-        except:
-            toID = fromID
-        batch_temp.IS_BATCH[message.from_user.id] = False
-        for msgid in range(fromID, toID+1):
-            if batch_temp.IS_BATCH.get(message.from_user.id): break
-            user_data = await db.get_session(message.from_user.id)
-            if user_data is None:
-                await message.reply("**For Downloading Restricted Content You Have To /login First.**")
-                batch_temp.IS_BATCH[message.from_user.id] = True
-                return
-            try:
-                acc = Client("saverestricted", session_string=user_data, api_hash=API_HASH, api_id=API_ID)
-                await acc.connect()
-            except:
-                batch_temp.IS_BATCH[message.from_user.id] = True
-                return await message.reply("**Your Login Session Expired. So /logout First Then Login Again By - /login**")
-            
             # private
             if "https://t.me/c/" in message.text:
                 chatid = int("-100" + datas[4])
@@ -198,7 +128,7 @@ async def save(client: Client, message: Message):
                 except Exception as e:
                     if ERROR_MESSAGE == True:
                         await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id)
-    
+
             # bot
             elif "https://t.me/b/" in message.text:
                 username = datas[4]
@@ -207,7 +137,7 @@ async def save(client: Client, message: Message):
                 except Exception as e:
                     if ERROR_MESSAGE == True:
                         await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id)
-            
+
             # public
             else:
                 username = datas[3]
@@ -235,12 +165,6 @@ async def save(client: Client, message: Message):
 async def handle_private(client: Client, acc, message: Message, chatid: int, msgid: int):
     msg: Message = await acc.get_messages(chatid, msgid)
     if msg.empty: return 
-    
-    # Check if message is part of a media group (album)
-    if msg.media_group_id:
-        await handle_media_group(client, acc, message, chatid, msg.media_group_id)
-        return
-    
     msg_type = get_message_type(msg)
     if not msg_type: return 
     chat = message.chat.id
@@ -271,27 +195,27 @@ async def handle_private(client: Client, acc, message: Message, chatid: int, msg
     else:
         caption = None
     if batch_temp.IS_BATCH.get(message.from_user.id): return 
-            
+
     if "Document" == msg_type:
         try:
             ph_path = await acc.download_media(msg.document.thumbs[0].file_id)
         except:
             ph_path = None
-        
+
         try:
             await client.send_document(chat, file, thumb=ph_path, caption=caption, reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML, progress=progress, progress_args=[message,"up"])
         except Exception as e:
             if ERROR_MESSAGE == True:
                 await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)
         if ph_path != None: os.remove(ph_path)
-        
+
 
     elif "Video" == msg_type:
         try:
             ph_path = await acc.download_media(msg.video.thumbs[0].file_id)
         except:
             ph_path = None
-        
+
         try:
             await client.send_video(chat, file, duration=msg.video.duration, width=msg.video.width, height=msg.video.height, thumb=ph_path, caption=caption, reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML, progress=progress, progress_args=[message,"up"])
         except Exception as e:
@@ -305,7 +229,7 @@ async def handle_private(client: Client, acc, message: Message, chatid: int, msg
         except Exception as e:
             if ERROR_MESSAGE == True:
                 await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)
-        
+
     elif "Sticker" == msg_type:
         try:
             await client.send_sticker(chat, file, reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)
@@ -331,105 +255,20 @@ async def handle_private(client: Client, acc, message: Message, chatid: int, msg
         except Exception as e:
             if ERROR_MESSAGE == True:
                 await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)
-        
+
         if ph_path != None: os.remove(ph_path)
 
     elif "Photo" == msg_type:
         try:
             await client.send_photo(chat, file, caption=caption, reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)
-        except Exception as e:
+        except:
             if ERROR_MESSAGE == True:
                 await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)
-    
+
     if os.path.exists(f'{message.id}upstatus.txt'): 
         os.remove(f'{message.id}upstatus.txt')
         os.remove(file)
     await client.delete_messages(message.chat.id,[smsg.id])
-
-
-# Handle media group (album) messages
-async def handle_media_group(client: Client, acc, message: Message, chatid, media_group_id):
-    chat = message.chat.id
-    if batch_temp.IS_BATCH.get(message.from_user.id): return
-    
-    # Get all messages in the media group
-    media_group_messages = await acc.get_media_group(chatid, media_group_id)
-    
-    # Status message for downloading
-    smsg = await client.send_message(message.chat.id, '**Downloading Album**', reply_to_message_id=message.id)
-    asyncio.create_task(downstatus(client, f'{message.id}downstatus.txt', smsg, chat))
-    
-    # Download all media in the album
-    media_list = []
-    caption = None
-    
-    for i, msg in enumerate(media_group_messages):
-        # Use caption from first message with a caption
-        if not caption and msg.caption:
-            caption = msg.caption
-        
-        try:
-            msg_type = get_message_type(msg)
-            if not msg_type or msg_type not in ["Photo", "Video", "Document"]:
-                continue
-                
-            file_path = await acc.download_media(
-                msg, 
-                file_name=f"album_{message.id}_{i}",
-                progress=progress, 
-                progress_args=[message, "down"]
-            )
-            
-            if msg_type == "Photo":
-                media_list.append(pyrogram.types.InputMediaPhoto(
-                    media=file_path,
-                    caption=caption if i == 0 else None
-                ))
-            elif msg_type == "Video":
-                media_list.append(pyrogram.types.InputMediaVideo(
-                    media=file_path,
-                    caption=caption if i == 0 else None
-                ))
-            elif msg_type == "Document":
-                media_list.append(pyrogram.types.InputMediaDocument(
-                    media=file_path,
-                    caption=caption if i == 0 else None
-                ))
-                
-        except Exception as e:
-            if ERROR_MESSAGE == True:
-                await client.send_message(message.chat.id, f"Error downloading media {i+1}: {e}", reply_to_message_id=message.id)
-    
-    # Remove download status file
-    if os.path.exists(f'{message.id}downstatus.txt'):
-        os.remove(f'{message.id}downstatus.txt')
-    
-    # Upload status
-    await smsg.edit("**Uploading Album**")
-    asyncio.create_task(upstatus(client, f'{message.id}upstatus.txt', smsg, chat))
-    
-    # Send media group
-    try:
-        if media_list:
-            await client.send_media_group(
-                chat_id=chat,
-                media=media_list,
-                reply_to_message_id=message.id
-            )
-    except Exception as e:
-        if ERROR_MESSAGE == True:
-            await client.send_message(message.chat.id, f"Error sending album: {e}", reply_to_message_id=message.id)
-    
-    # Clean up
-    if os.path.exists(f'{message.id}upstatus.txt'):
-        os.remove(f'{message.id}upstatus.txt')
-    
-    for i in range(len(media_list)):
-        file_path = f"album_{message.id}_{i}"
-        if os.path.exists(file_path):
-            os.remove(file_path)
-    
-    await client.delete_messages(message.chat.id, [smsg.id])
 
 
 # get the type of message
