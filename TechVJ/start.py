@@ -165,6 +165,12 @@ async def save(client: Client, message: Message):
 async def handle_private(client: Client, acc, message: Message, chatid: int, msgid: int):
     msg: Message = await acc.get_messages(chatid, msgid)
     if msg.empty: return 
+    
+    # Check if message is part of a media group (album)
+    if msg.media_group_id:
+        await handle_media_group(client, acc, message, chatid, msg.media_group_id)
+        return
+    
     msg_type = get_message_type(msg)
     if not msg_type: return 
     chat = message.chat.id
@@ -261,7 +267,7 @@ async def handle_private(client: Client, acc, message: Message, chatid: int, msg
     elif "Photo" == msg_type:
         try:
             await client.send_photo(chat, file, caption=caption, reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)
-        except:
+        except Exception as e:
             if ERROR_MESSAGE == True:
                 await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)
     
@@ -269,6 +275,91 @@ async def handle_private(client: Client, acc, message: Message, chatid: int, msg
         os.remove(f'{message.id}upstatus.txt')
         os.remove(file)
     await client.delete_messages(message.chat.id,[smsg.id])
+
+
+# Handle media group (album) messages
+async def handle_media_group(client: Client, acc, message: Message, chatid, media_group_id):
+    chat = message.chat.id
+    if batch_temp.IS_BATCH.get(message.from_user.id): return
+    
+    # Get all messages in the media group
+    media_group_messages = await acc.get_media_group(chatid, media_group_id)
+    
+    # Status message for downloading
+    smsg = await client.send_message(message.chat.id, '**Downloading Album**', reply_to_message_id=message.id)
+    asyncio.create_task(downstatus(client, f'{message.id}downstatus.txt', smsg, chat))
+    
+    # Download all media in the album
+    media_list = []
+    caption = None
+    
+    for i, msg in enumerate(media_group_messages):
+        # Use caption from first message with a caption
+        if not caption and msg.caption:
+            caption = msg.caption
+        
+        try:
+            msg_type = get_message_type(msg)
+            if not msg_type or msg_type not in ["Photo", "Video", "Document"]:
+                continue
+                
+            file_path = await acc.download_media(
+                msg, 
+                file_name=f"album_{message.id}_{i}",
+                progress=progress, 
+                progress_args=[message, "down"]
+            )
+            
+            if msg_type == "Photo":
+                media_list.append(pyrogram.types.InputMediaPhoto(
+                    media=file_path,
+                    caption=caption if i == 0 else None
+                ))
+            elif msg_type == "Video":
+                media_list.append(pyrogram.types.InputMediaVideo(
+                    media=file_path,
+                    caption=caption if i == 0 else None
+                ))
+            elif msg_type == "Document":
+                media_list.append(pyrogram.types.InputMediaDocument(
+                    media=file_path,
+                    caption=caption if i == 0 else None
+                ))
+                
+        except Exception as e:
+            if ERROR_MESSAGE == True:
+                await client.send_message(message.chat.id, f"Error downloading media {i+1}: {e}", reply_to_message_id=message.id)
+    
+    # Remove download status file
+    if os.path.exists(f'{message.id}downstatus.txt'):
+        os.remove(f'{message.id}downstatus.txt')
+    
+    # Upload status
+    await smsg.edit("**Uploading Album**")
+    asyncio.create_task(upstatus(client, f'{message.id}upstatus.txt', smsg, chat))
+    
+    # Send media group
+    try:
+        if media_list:
+            await client.send_media_group(
+                chat_id=chat,
+                media=media_list,
+                reply_to_message_id=message.id
+            )
+    except Exception as e:
+        if ERROR_MESSAGE == True:
+            await client.send_message(message.chat.id, f"Error sending album: {e}", reply_to_message_id=message.id)
+    
+    # Clean up
+    if os.path.exists(f'{message.id}upstatus.txt'):
+        os.remove(f'{message.id}upstatus.txt')
+    
+    for i in range(len(media_list)):
+        file_path = f"album_{message.id}_{i}"
+        if os.path.exists(file_path):
+            os.remove(file_path)
+    
+    await client.delete_messages(message.chat.id, [smsg.id])
 
 
 # get the type of message
@@ -320,4 +411,3 @@ def get_message_type(msg: pyrogram.types.messages_and_media.message.Message):
         return "Text"
     except:
         pass
-        
