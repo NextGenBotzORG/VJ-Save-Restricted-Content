@@ -169,33 +169,65 @@ async def handle_private(client: Client, acc, message: Message, chatid, msgid: i
         processed_groups.add(msg.media_group_id)
         media_group = await acc.get_media_group(chatid, msgid)
         media_list = []
-        caption = media_group[0].caption if media_group[0].caption else None
+        # Search for caption in any message of the media group
+        caption = None
+        caption_entities = None
+        for media_msg in media_group:
+            if media_msg.caption:
+                caption = media_msg.caption
+                caption_entities = media_msg.caption_entities
+                break
+        
+        if caption:
+            print(f"Album Caption: {caption}, Entities: {caption_entities}")
+        else:
+            print("No caption found in media group")
         
         smsg = await client.send_message(message.chat.id, '**Downloading Album**', reply_to_message_id=message.id)
         asyncio.create_task(downstatus(client, f'{message.id}downstatus.txt', smsg, chat))
         
         for media_msg in media_group:
             media_type = get_message_type(media_msg)
+            print(f"Processing media type: {media_type}")
             try:
                 file = await acc.download_media(media_msg, progress=progress, progress_args=[message, "down"])
                 if media_type == "Photo":
-                    media_list.append(InputMediaPhoto(file, caption=caption if media_list else None))
-                elif media_type == "Video":
-                    media_list.append(InputMediaVideo(
+                    media_item = InputMediaPhoto(
                         file,
-                        caption=caption if media_list else None,
-                        duration=media_msg.video.duration,
-                        width=media_msg.video.width,
-                        height=media_msg.video.height
-                    ))
+                        caption=caption if not media_list else None,
+                        caption_entities=caption_entities if not media_list else None,
+                        parse_mode=enums.ParseMode.HTML
+                    )
+                elif media_type == "Video":
+                    media_item = InputMediaVideo(
+                        file,
+                        caption=caption if not media_list else None,
+                        caption_entities=caption_entities if not media_list else None,
+                        duration=media_msg.video.duration if media_msg.video else 0,
+                        width=media_msg.video.width if media_msg.video else 0,
+                        height=media_msg.video.height if media_msg.video else 0,
+                        parse_mode=enums.ParseMode.HTML
+                    )
                 elif media_type == "Document":
-                    media_list.append(InputMediaDocument(file, caption=caption if media_list else None))
+                    media_item = InputMediaDocument(
+                        file,
+                        caption=caption if not media_list else None,
+                        caption_entities=caption_entities if not media_list else None,
+                        parse_mode=enums.ParseMode.HTML
+                    )
+                else:
+                    print(f"Unsupported media type: {media_type}")
+                    continue  # Skip unsupported media types
+                media_list.append(media_item)
             except Exception as e:
                 if ERROR_MESSAGE:
-                    await client.send_message(message.chat.id, f"Error downloading media: {e}", reply_to_message_id=message.id)
+                    await client.send_message(message.chat.id, f"Error downloading media ({media_type}): {e}", reply_to_message_id=message.id)
+                print(f"Error downloading media ({media_type}): {e}")
                 continue
         
-        os.remove(f'{message.id}downstatus.txt')
+        if os.path.exists(f'{message.id}downstatus.txt'):
+            os.remove(f'{message.id}downstatus.txt')
+        
         if not media_list or batch_temp.IS_BATCH.get(message.from_user.id):
             await smsg.delete()
             return
@@ -203,12 +235,17 @@ async def handle_private(client: Client, acc, message: Message, chatid, msgid: i
         asyncio.create_task(upstatus(client, f'{message.id}upstatus.txt', smsg, chat))
         try:
             await client.send_media_group(chat, media_list, reply_to_message_id=message.id)
+            print("Media group uploaded successfully")
         except Exception as e:
             if ERROR_MESSAGE:
                 await client.send_message(message.chat.id, f"Error uploading album: {e}", reply_to_message_id=message.id)
+            print(f"Error uploading album: {e}")
         
         for media in media_list:
-            os.remove(media.media)
+            try:
+                os.remove(media.media)
+            except:
+                pass
         if os.path.exists(f'{message.id}upstatus.txt'):
             os.remove(f'{message.id}upstatus.txt')
         await smsg.delete()
@@ -242,8 +279,10 @@ async def handle_private(client: Client, acc, message: Message, chatid, msgid: i
     
     if msg.caption:
         caption = msg.caption
+        caption_entities = msg.caption_entities
     else:
         caption = None
+        caption_entities = None
     if batch_temp.IS_BATCH.get(message.from_user.id):
         return
     
@@ -253,7 +292,7 @@ async def handle_private(client: Client, acc, message: Message, chatid, msgid: i
         except:
             ph_path = None
         try:
-            await client.send_document(chat, file, thumb=ph_path, caption=caption, reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML, progress=progress, progress_args=[message, "up"])
+            await client.send_document(chat, file, thumb=ph_path, caption=caption, caption_entities=caption_entities, reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML, progress=progress, progress_args=[message, "up"])
         except Exception as e:
             if ERROR_MESSAGE:
                 await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)
@@ -266,7 +305,7 @@ async def handle_private(client: Client, acc, message: Message, chatid, msgid: i
         except:
             ph_path = None
         try:
-            await client.send_video(chat, file, duration=msg.video.duration, width=msg.video.width, height=msg.video.height, thumb=ph_path, caption=caption, reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML, progress=progress, progress_args=[message, "up"])
+            await client.send_video(chat, file, duration=msg.video.duration, width=msg.video.width, height=msg.video.height, thumb=ph_path, caption=caption, caption_entities=caption_entities, reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML, progress=progress, progress_args=[message, "up"])
         except Exception as e:
             if ERROR_MESSAGE:
                 await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)
@@ -289,7 +328,7 @@ async def handle_private(client: Client, acc, message: Message, chatid, msgid: i
     
     elif "Voice" == msg_type:
         try:
-            await client.send_voice(chat, file, caption=caption, caption_entities=msg.caption_entities, reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML, progress=progress, progress_args=[message, "up"])
+            await client.send_voice(chat, file, caption=caption, caption_entities=caption_entities, reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML, progress=progress, progress_args=[message, "up"])
         except Exception as e:
             if ERROR_MESSAGE:
                 await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)
@@ -300,7 +339,7 @@ async def handle_private(client: Client, acc, message: Message, chatid, msgid: i
         except:
             ph_path = None
         try:
-            await client.send_audio(chat, file, thumb=ph_path, caption=caption, reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML, progress=progress, progress_args=[message, "up"])
+            await client.send_audio(chat, file, thumb=ph_path, caption=caption, caption_entities=caption_entities, reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML, progress=progress, progress_args=[message, "up"])
         except Exception as e:
             if ERROR_MESSAGE:
                 await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)
@@ -309,7 +348,7 @@ async def handle_private(client: Client, acc, message: Message, chatid, msgid: i
     
     elif "Photo" == msg_type:
         try:
-            await client.send_photo(chat, file, caption=caption, reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)
+            await client.send_photo(chat, file, caption=caption, caption_entities=caption_entities, reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)
         except Exception as e:
             if ERROR_MESSAGE:
                 await client.send_message(message.chat.id, f"Error: {e}", reply_to_message_id=message.id, parse_mode=enums.ParseMode.HTML)
