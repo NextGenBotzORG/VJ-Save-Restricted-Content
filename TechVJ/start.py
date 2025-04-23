@@ -1,6 +1,6 @@
 import os
 import asyncio
-from pyrogram import Client, enums
+from pyrogram import Client, filters, enums
 from pyrogram.errors import UsernameNotOccupied
 from pyrogram.types import Message
 from TechVJ.strings import HELP_TXT
