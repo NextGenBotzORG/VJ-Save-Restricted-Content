@@ -1,8 +1,9 @@
 import os
 import asyncio
+import pyrogram
 from pyrogram import Client, filters, enums
 from pyrogram.errors import UsernameNotOccupied
-from pyrogram.types import Message
+from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
 from TechVJ.strings import HELP_TXT
 
 class batch_temp(object):
